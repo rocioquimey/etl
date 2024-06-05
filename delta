@@ -1,0 +1,261 @@
+view: nrg_delta {
+derived_table: {
+  sql:
+----tomamos la información de window 8, teniendo en cuenta el avg de unaided para esa ventan
+with t8 as (
+select COUNTRY_STR,
+TITLE_STR,
+SURVEY_DATE as SURVEY_DATE_8,
+WINDOW_STR as WINDOW_STR_8,
+AVG(UNAIDED_AWARENESS_FLT) as UNAIDED_AWARENESS_FLT_8,
+avg(TOTAL_AWARENESS_FLT) as total_AWARENESS_FLT_8
+from stg_digital_business_data.NRG_SURVEY
+where WINDOW_STR_8 = 'T-8'
+GROUP BY 1,2,3,4
+)
+,
+
+delta as (select t8.COUNTRY_STR,
+t8.TITLE_STR ,
+WINDOW_STR_8 ,
+SURVEY_DATE_8 ,
+---creamos el delta
+(UNAIDED_AWARENESS_FLT_0 - UNAIDED_AWARENESS_FLT_8) AS DELTA,
+(TOTAL_AWARENESS_FLT_0 - TOTAL_AWARENESS_FLT_8) as DELTA_TOTAL_AW,
+A.SURVEY_DATE_0,
+  A.WINDOW_STR_0
+from t8
+LEFT join ---unimos los valores de la window 0 y 8
+(---- tomamos los valores de la window 0 y el unaided de esa fecha para hacer el delta
+select COUNTRY_STR,
+TITLE_STR ,
+WINDOW_STR as WINDOW_STR_0,
+SURVEY_DATE as SURVEY_DATE_0 ,
+AVG(UNAIDED_AWARENESS_FLT) as UNAIDED_AWARENESS_FLT_0,
+AVG(total_AWARENESS_FLT) as total_AWARENESS_FLT_0
+from stg_digital_business_data.NRG_SURVEY
+where window_str = 'T-0'
+GROUP BY 1,2,3,4
+) as A
+on t8.TITLE_STR = A.TITLE_STR
+AND t8.country_str= A.country_str
+
+)
+
+select stg_digital_business_data.NRG_SURVEY.*,
+---Mostramos el càlculo unicamente para la window 1
+CASE WHEN stg_digital_business_data.NRG_SURVEY.WINDOW_STR = 'T+1' THEN DELTA
+ELSE NULL
+END AS DELTA_1,
+CASE WHEN stg_digital_business_data.NRG_SURVEY.WINDOW_STR = 'T+1' THEN DELTA_TOTAL_AW
+ELSE NULL
+END AS DELTA_TOTAL_AW
+from stg_digital_business_data.NRG_SURVEY
+join DELTA
+
+----usamos solo la union del titulo y el país
+on stg_digital_business_data.NRG_SURVEY.TITLE_STR  = DELTA.TITLE_STR
+and stg_digital_business_data.NRG_SURVEY.COUNTRY_STR  = DELTA.COUNTRY_STR
+--where stg_digital_business_data.NRG_SURVEY.TITLE_STR like 'Avatar%'
+---and stg_digital_business_data.NRG_SURVEY.COUNTRY_STR ='MEX'
+
+
+;;
+}
+
+  dimension: DELTA_1 {
+    label: "Delta"
+    type:number
+    sql: ${TABLE}."DELTA_1"*100;;
+    value_format: "0.##\" pp\""
+  }
+  dimension: DELTA_TOTAL_AW {
+    label: "DELTA_TOTAL_AW"
+    type:number
+    sql: ${TABLE}."DELTA_TOTAL_AW"*100;;
+    value_format: "0.##\" pp\""
+  }
+
+  dimension_group: survey {
+    type: time
+    timeframes: [
+      raw,
+      date,
+      week,
+      month,
+      quarter,
+      year
+    ]
+    convert_tz: no
+    datatype: date
+    sql: ${TABLE}."SURVEY_DATE" ;;
+
+  }
+
+  dimension: country_str {
+    label: "Country"
+    type: string
+    sql: ${TABLE}."COUNTRY_STR" ;;
+  }
+  dimension: title_str {
+    label: "Title"
+    type:string
+    sql: ${TABLE}."TITLE_STR" ;;
+  }
+
+  measure: total_awareness_flt {
+    label: "Total Awareness"
+    type: average
+    sql: ${TABLE}."TOTAL_AWARENESS_FLT" ;;
+    value_format_name: percent_2
+  }
+
+
+  measure: unaided_awareness_flt {
+    label: "Unaided Awareness"
+    type: average
+    sql: ${TABLE}."UNAIDED_AWARENESS_FLT" ;;
+    value_format_name: percent_2
+}
+
+  measure: first_choice_all_flt {
+    label: "First Choice All"
+    type: average
+    sql: ${TABLE}."FIRST_CHOICE_ALL_FLT" ;;
+    value_format_name: percent_2
+  }
+
+  measure: definite_interest_among_all_flt {
+    label: "Definite Interest Among All"
+    type: average
+    sql: ${TABLE}."DEFINITE_INTEREST_AMONG_ALL_FLT" ;;
+    value_format_name: percent_2
+  }
+
+  measure: definite_interest_among_aware_flt {
+    label: "Definite Interest Among Aware"
+    type: average
+    sql: ${TABLE}."DEFINITE_INTEREST_AMONG_AWARE_FLT" ;;
+    value_format_name: percent_2
+}
+
+  dimension_group: release {
+    type: time
+    timeframes: [
+      raw,
+      date,
+      week,
+      month,
+      quarter,
+      year
+    ]
+    convert_tz: no
+    datatype: date
+    sql: ${TABLE}."RELEASE_DATE" ;;
+  }
+  dimension: days_diff {
+    hidden:  yes
+    type:  number
+    sql: floor((datediff(day, ${release_date},${survey_date})))  ;;
+  }
+  dimension: Weeks {
+    label: "Window "
+    type: number
+    sql:  case when ${days_diff} <= -168 then -24
+          when ${days_diff} <= -112 then -16
+          when ${days_diff} <= -70 then -10
+          when ${days_diff} <= -63 then -9
+          when ${days_diff} <= -56 then -8
+          when ${days_diff} <= -49 then -7
+          when ${days_diff} <= -42 then -6
+          when ${days_diff} <= -35 then -5
+          when ${days_diff} <= -28 then -4
+          when ${days_diff} <= -21 then -3
+          when ${days_diff} <= -14 then -2
+          when ${days_diff} <= -7 then -1
+          when ${days_diff} <= 0 then 0
+          when ${days_diff} <= 7 then +1
+          when ${days_diff} <= 14 then +2
+          when ${days_diff} <= 21 then +3
+          when ${days_diff} <= 28 then +4
+          when ${days_diff} <= 35 then +5
+          when ${days_diff} <= 42 then +6
+          when ${days_diff} <= 49 then +7
+          when ${days_diff} <= 56 then +8
+          when ${days_diff} <= 63 then +9
+          when ${days_diff} <= 70 then +10
+          end;;
+    order_by_field: force_ordering
+  }
+
+
+  dimension: window_str {
+    hidden:  yes
+    type: string
+    sql:  ${TABLE}."WINDOW_STR";;
+  }
+
+  dimension: force_ordering {
+    type: number
+    hidden: yes
+    sql:  case when ${Weeks}  = '-24'  then 1
+          when ${Weeks}  = '-16' then 2
+          when ${Weeks}  = '-10' then 3
+          when ${Weeks}  = '-9' then 4
+          when ${Weeks}  = '-8' then 5
+          when ${Weeks}  = '-7' then 6
+          when ${Weeks}  = '-6' then 7
+          when ${Weeks}  = '-5' then 8
+          when ${Weeks}  = '-4' then 9
+          when ${Weeks}  = '-3' then 10
+          when ${Weeks}  = '-2' then 11
+          when ${Weeks}  = '-1' then 12
+          when ${Weeks}  = '-0' then 13
+          when ${Weeks}  = '+1' then 14
+          when ${Weeks}  = '+2' then 15
+          when ${Weeks}  = '+3' then 16
+          when ${Weeks}  = '+4' then 17
+          when ${Weeks}  = '+5' then 18
+          when ${Weeks}  = '+6' then 19
+          when ${Weeks}  = '+7' then 20
+          when ${Weeks}  = '+8' then 21
+          when ${Weeks}  = '+9' then 22
+          when ${Weeks}  = '+10' then 23
+          end
+          ;;
+  }
+  dimension: studio_str {
+    label: "Studio"
+    type: string
+    sql: ${TABLE}."STUDIO_STR" ;;
+  }
+
+  dimension: segment_str {
+    label: "Segment"
+    type: string
+    sql: ${TABLE}."SEGMENT_STR" ;;
+  }
+
+  dimension: genre_str {
+    type: string
+    hidden: yes
+    sql:${TABLE}."GENRE_STR";;
+
+  }
+  dimension: genre {
+    type: string
+    sql:   case when ${genre_str} = 'Sci-fi'  then 'Sci-Fi'
+    when ${genre_str} = 'Romantic Comedy'  then 'ROMANTIC COMEDY'
+    when  ${genre_str}  = 'Horror' then 'HORROR'
+    when ${genre_str}  = 'Family' then 'FAMILY'
+    when ${genre_str}  = 'Animated' then 'Animation'
+    when ${genre_str}  = 'Action/Drama' then 'ACTION DRAMA'
+   when ${genre_str}  = 'Triller'then 'SUSPNS/THRILLER'
+   when ${genre_str}  ='Thriller'then 'SUSPNS/THRILLER'
+    when  ${genre_str}  = 'Suspense' then 'SUSPNS/THRILLER'
+    else  ${genre_str}
+
+    end
+    ;;
+  }
+}
